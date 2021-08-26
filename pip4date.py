@@ -3,6 +3,7 @@ import os
 import re
 from bisect import bisect_left
 from datetime import datetime
+from json import JSONDecodeError
 from typing import Tuple, List, Any
 from warnings import warn
 
@@ -31,9 +32,16 @@ def binary_search(a: List, x: Any, lo: int = 0, hi: int = None) -> int:
     return pos if pos != hi else -1
 
 
-def get_ver(package_name: str, package_date: str) -> Tuple[str, str]:
+def get_ver(package_name: str, package_date: str, list_show: bool) -> Tuple[str, str]:
     res = requests.get(f'https://pypi.org/pypi/{package_name}/json')
-    d = res.json()
+    try:
+        d = res.json()
+    except JSONDecodeError:
+        print(f'Can`t decode info for package {package_name}! Skipping...')
+        if list_show:
+            return 'No info', 'No info'
+        else:
+            return
     releases = list(d['releases'].keys())
     releases = [r for r in releases if d['releases'][r]]
     release_dates = [datetime.strptime(d['releases'][r][0]['upload_time'], '%Y-%m-%dT%H:%M:%S') for r in releases]
@@ -66,13 +74,17 @@ if not args.req:
     packages = args.package if isinstance(args.package, list) else [args.package]
 else:
     packages = []
-    with open(args.req) as f:
-        lines = f.readlines()
-        for line in lines:
-            p = line.rstrip().split('=')[0]
-            packages.append(p)
+    with open(args.package[0], 'r') as f:
+        for line in f:
+            if len(line.strip()) > 0 and (not line.startswith('#')):
+                p = line.strip().split('=')[0]
+                packages.append(p)
 
-packages_ver_and_date = [(p, *get_ver(p, args.date)) for p in packages]
+packages_ver_and_date = []
+for p in packages:
+    ver_and_date = get_ver(p, args.date, args.list_show)
+    if ver_and_date is not None:
+        packages_ver_and_date.append((p, *ver_and_date))
 
 if args.output is not None:
     with open(args.output, 'w') as f:
